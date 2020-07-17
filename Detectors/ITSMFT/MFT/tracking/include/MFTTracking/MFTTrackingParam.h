@@ -33,12 +33,18 @@ enum MFTTrackModel {
   Linear
 };
 
+enum MFTSeedQPt {
+  qPtQuadratic,
+  qPtFCF
+};
+
 // **
 // ** Parameters for MFT tracking configuration
 // **
 struct MFTTrackingParam : public o2::conf::ConfigurableParamHelper<MFTTrackingParam> {
   Int_t seed = MFTTrackingSeed::DH;
   Int_t trackmodel = MFTTrackModel::Helix;
+  Int_t seedQPt = MFTSeedQPt::qPtQuadratic;
   double sigmaboost = 1e3;
   double seedH_k = 1.0;
   double MFTRadLenghts = 0.041; // MFT average material budget within acceptance

@@ -79,10 +79,10 @@ class TrackMFT
   Double_t getSigmaInvQPt() const { return mCovariances(4, 4); }
 
   // Charge and momentum from quadratic regression of clusters X,Y positions
-  void setInvQPtQuadtratic(Double_t invqpt) { mInvQPtQuadtratic = invqpt; }
-  const Double_t getInvQPtQuadtratic() const { return mInvQPtQuadtratic; } // Inverse charged pt
-  const Double_t getPtQuadtratic() const { return TMath::Abs(1.f / getInvQPtQuadtratic()); }
-  const Double_t getChargeQuadratic() const { return TMath::Sign(1., getInvQPtQuadtratic()); }
+  void setInvQPtSeed(Double_t invqpt) { mInvQPtSeed = invqpt; }
+  const Double_t getInvQPtSeed() const { return mInvQPtSeed; } // Inverse charged pt
+  const Double_t getPtQuadtratic() const { return TMath::Abs(1.f / getInvQPtSeed()); }
+  const Double_t getChargeQuadratic() const { return TMath::Sign(1., getInvQPtSeed()); }
   void setChi2QPtQuadtratic(Double_t chi2) { mQuadraticFitChi2 = chi2; }
   const Double_t getChi2QPtQuadtratic() const { return mQuadraticFitChi2; }
 
@@ -218,7 +218,7 @@ class TrackMFT
   // Chi2 of the quadratic regression used to estimate track pT and charge
   Double_t mQuadraticFitChi2 = 0.;
   // inversed charged momentum from quadratic regression
-  Double_t mInvQPtQuadtratic;
+  Double_t mInvQPtSeed;
 
   ClassDefNV(TrackMFT, 1);
 };

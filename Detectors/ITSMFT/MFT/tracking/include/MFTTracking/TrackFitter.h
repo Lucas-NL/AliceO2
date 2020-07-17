@@ -78,6 +78,8 @@ class TrackFitter
 // Functions to estimate momentum and charge from track curvature
 Double_t invQPtFromParabola(const FitterTrackMFT& track, double bFieldZ, Double_t& chi2);
 Double_t QuadraticRegression(Int_t nVal, Double_t* xVal, Double_t* yVal, Double_t& p0, Double_t& p1, Double_t& p2);
+Double_t invQPtFromFCF(const FitterTrackMFT& track, Double_t bFieldZ, Double_t& chi2);
+Bool_t LinearRegression(Int_t nVal, Double_t* xVal, Double_t* yVal, Double_t* yErr, Double_t& a, Double_t& ae, Double_t& b, Double_t& be);
 
 } // namespace mft
 } // namespace o2

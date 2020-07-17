@@ -70,7 +70,7 @@ bool TrackFitter::fit(FitterTrackMFT& track, bool smooth, bool finalize,
 
   // initialize the starting track parameters and cluster
   double chi2invqptquad;
-  double invpqtquad;
+  double invpqtseed;
 
   auto itParam(track.rbegin());
   if (itStartingParam != nullptr) {
@@ -86,10 +86,10 @@ bool TrackFitter::fit(FitterTrackMFT& track, bool smooth, bool finalize,
     // and the one of the first previous cluster found on a different layer
     auto itPreviousParam(itParam);
     ++itPreviousParam;
-    invpqtquad = invQPtFromParabola(track, mBZField, chi2invqptquad);
-    track.setInvQPtQuadtratic(invpqtquad);
+    invpqtseed = mftTrackingParam.seedQPt ? invQPtFromFCF(track, mBZField, chi2invqptquad) : invQPtFromParabola(track, mBZField, chi2invqptquad);
+    track.setInvQPtSeed(invpqtseed);
     track.setChi2QPtQuadtratic(chi2invqptquad);
-    (*itParam).setInvQPt(track.getInvQPtQuadtratic()); // Initial momentum estimate
+    (*itParam).setInvQPt(track.getInvQPtSeed()); // Initial momentum estimate
     initTrack(*itParam->getClusterPtr(), *itParam);
   }
 
@@ -564,6 +564,149 @@ Double_t QuadraticRegression(Int_t nVal, Double_t* xVal, Double_t* yVal, Double_
   TMatrixD chi2(tmp4, TMatrixD::kTransposeMult, tmp4);
 
   return chi2(0, 0);
+}
+
+
+//__________________________________________________________________________
+Double_t invQPtFromFCF(const FitterTrackMFT& track, Double_t bFieldZ, Double_t& chi2)
+{
+  // Fast Circle Fit (Hansroul, Jeremie, Savard, 1987)
+  auto nPoints = track.getNClusters();
+  Double_t* xVal = new Double_t[nPoints];
+  Double_t* yVal = new Double_t[nPoints];
+  Double_t* zVal = new Double_t[nPoints];
+  Double_t* xErr = new Double_t[nPoints];
+  Double_t* yErr = new Double_t[nPoints];
+  Double_t* uVal = new Double_t[nPoints - 1];
+  Double_t* vVal = new Double_t[nPoints - 1];
+  Double_t* vErr = new Double_t[nPoints - 1];
+  Double_t a, ae, b, be, x2, y2, invx2y2, rx, ry, r;
+
+  int np = 0;
+  for (auto trackparam = track.begin(); trackparam != track.end(); trackparam++) {
+    //printf("BV track %d  %f  %f  %f \n", np, trackparam->getClusterPtr()->getX(), trackparam->getClusterPtr()->getY(), trackparam->getClusterPtr()->getZ());
+    xErr[np] = trackparam->getClusterPtr()->sigmaX2;
+    yErr[np] = trackparam->getClusterPtr()->sigmaY2;
+    if (np > 0) {
+      xVal[np] = trackparam->getClusterPtr()->xCoordinate - xVal[0];
+      yVal[np] = trackparam->getClusterPtr()->yCoordinate - yVal[0];
+      xErr[np] *= std::sqrt(2.);
+      yErr[np] *= std::sqrt(2.);
+    } else {
+      xVal[np] = 0.;
+      yVal[np] = 0.;
+    }
+    zVal[np] = trackparam->getClusterPtr()->zCoordinate;
+    np++;
+  }
+  for (int i = 0; i < (np - 1); i++) {
+    x2 = xVal[i + 1] * xVal[i + 1];
+    y2 = yVal[i + 1] * yVal[i + 1];
+    invx2y2 = 1. / (x2 + y2);
+    uVal[i] = xVal[i + 1] * invx2y2;
+    vVal[i] = yVal[i + 1] * invx2y2;
+    vErr[i] = std::sqrt(8. * xErr[i + 1] * xErr[i + 1] * x2 * y2 + 2. * yErr[i + 1] * yErr[i + 1] * (x2 - y2)) * invx2y2 * invx2y2;
+  }
+
+  Double_t invqpt_fcf;
+  Int_t qfcf;
+  chi2 = 0.;
+  if (LinearRegression((np - 1), uVal, vVal, yErr, a, ae, b, be)) {
+    // v = a * u + b
+    // circle passing through (0,0):
+    // (x - rx)^2 + (y - ry)^2 = r^2
+    // ---> a = - rx / ry;
+    // ---> b = 1 / (2 * ry)
+    ry =  1. / (2. * b);
+    rx = -a * ry;
+    r = std::sqrt(rx * rx + ry * ry);
+
+    // pt --->
+    Double_t invpt = 1. / (o2::constants::math::B2C * bFieldZ * r);
+
+    // sign(q) --->
+    // rotate around the first point (0,0) to bring the last point
+    // on the x axis (y = 0) and check the y sign of the rotated
+    // center of the circle
+    Double_t x = xVal[np - 1], y = yVal[np - 1], z = zVal[np - 1];
+    Double_t slope = TMath::ATan2(y, x);
+    Double_t cosSlope = TMath::Cos(slope);
+    Double_t sinSlope = TMath::Sin(slope);
+    Double_t rxRot = rx * cosSlope + ry * sinSlope;
+    Double_t ryRot = rx * sinSlope - ry * cosSlope;
+    qfcf = (ryRot > 0.) ? -1 : +1;
+    //printf("BV r-quad %f ,  r-fcf %f  q-fcf %f \n", 0.5 / q2, r, qfcf);
+
+    //Double_t xRot = x * cosSlope + y * sinSlope;
+    //printf("BV check %f %f \n", xRot, 2.0 * rxRot);
+
+    Double_t alpha = 2.0 * std::abs(TMath::ATan2(rxRot, ryRot));
+    Double_t x0 = xVal[0], y0 = yVal[0], z0 = zVal[0];
+    Double_t dxyz2 = (x - x0) * (x - x0) + (y - y0) * (y - y0) + (z - z0) * (z - z0);
+    Double_t cst = 1000.;
+    Double_t c_alpha = cst * alpha;
+    Double_t p, pt, pz;
+    pt = 1. / invpt;
+    p = std::sqrt(dxyz2) / c_alpha;
+    pz = std::sqrt(p * p - pt * pt);
+//    tanl = pz / pt;
+    invqpt_fcf = qfcf * invpt;
+  } else { // the linear regression failed...
+    printf("BV LinearRegression failed!\n");
+    invqpt_fcf = 1. / 100.;
+  }
+
+  return invqpt_fcf;
+}
+
+//__________________________________________________________________________
+Bool_t LinearRegression(Int_t nVal, Double_t *xVal, Double_t *yVal, Double_t *yErr, Double_t &a, Double_t &ae, Double_t &b, Double_t &be)
+{
+  // linear regression y = a * x + b
+
+  Double_t S1, SXY, SX, SY, SXX, SsXY, SsXX, SsYY, Xm, Ym, s, delta, difx;
+  Double_t invYErr2;
+
+  S1 = SXY = SX = SY = SXX = 0.0;
+  SsXX = SsYY = SsXY = Xm = Ym = 0.;
+  difx = 0.;
+  for (Int_t i = 0; i < nVal; i++) {
+    //printf("BV LinFit %d  %f  %f  %f  \n", i, xVal[i], yVal[i], yErr[i]);
+    invYErr2 = 1. / (yErr[i] * yErr[i]);
+    S1  += invYErr2;
+    SXY += xVal[i] * yVal[i] * invYErr2;
+    SX  += xVal[i] * invYErr2;
+    SY  += yVal[i] * invYErr2;
+    SXX += xVal[i] * xVal[i] * invYErr2;
+    if (i > 0) difx += TMath::Abs(xVal[i] - xVal[i - 1]);
+    Xm  += xVal[i];
+    Ym  += yVal[i];
+    SsXX += xVal[i] * xVal[i];
+    SsYY += yVal[i] * yVal[i];
+    SsXY += xVal[i] * yVal[i];
+  }
+  delta = SXX * S1 - SX * SX;
+  if (delta == 0.) {
+    return kFALSE;
+  }
+  a = (SXY * S1 - SX * SY) / delta;
+  b = (SY * SXX - SX * SXY) / delta;
+
+  Ym /= (Double_t)nVal;
+  Xm /= (Double_t)nVal;
+  SsYY -= (Double_t)nVal * (Ym*Ym);
+  SsXX -= (Double_t)nVal * (Xm*Xm);
+  SsXY -= (Double_t)nVal * (Ym*Xm);
+  Double_t eps = 1.E-24;
+  if ((nVal > 2) && (TMath::Abs(difx) > eps) && ((SsYY -(SsXY * SsXY) / SsXX) > 0.)) {
+    s = TMath::Sqrt((SsYY - (SsXY * SsXY) / SsXX)/(nVal - 2));
+    be = s * TMath::Sqrt(1. / (Double_t)nVal + (Xm * Xm) / SsXX);
+    ae = s / TMath::Sqrt(SsXX);
+  } else {
+    be = 0.;
+    ae = 0.;
+  }
+  return kTRUE;
 }
 
 } // namespace mft

@@ -115,7 +115,7 @@ void TrackFitterTask::run(ProcessingContext& pc)
       temptrack.setCovariancesLast(TtoSMatrixSym55(track.rbegin()->getCovariances()));
       temptrack.setTrackChi2(track.first().getTrackChi2());
       temptrack.setMCCompLabels(track.getMCCompLabels(), track.getNPoints());
-      temptrack.setInvQPtQuadtratic(track.getInvQPtQuadtratic());
+      temptrack.setInvQPtSeed(track.getInvQPtSeed());
       temptrack.setChi2QPtQuadtratic(track.getChi2QPtQuadtratic());
       temptrack.setCA(track.isCA());
       nTotalTracks++;
