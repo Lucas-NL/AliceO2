@@ -60,7 +60,7 @@ class TrackFitter
   static constexpr double getMaxChi2() { return SMaxChi2; }
 
  private:
-  void initTrack(const Cluster& cl, TrackParamMFT& param);
+  void initTrack(const Cluster& cl, TrackParamMFT& param, const Cluster& firstCl);
   bool addCluster(const TrackParamMFT& startingParam, const Cluster& cl, TrackParamMFT& param);
   bool smoothTrack(FitterTrackMFT& track, bool finalize);
   bool runSmoother(const TrackParamMFT& previousParam, TrackParamMFT& param);

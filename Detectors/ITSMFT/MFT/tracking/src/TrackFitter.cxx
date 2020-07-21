@@ -86,11 +86,11 @@ bool TrackFitter::fit(FitterTrackMFT& track, bool smooth, bool finalize,
     // and the one of the first previous cluster found on a different layer
     auto itPreviousParam(itParam);
     ++itPreviousParam;
-    invpqtseed = mftTrackingParam.seedQPt ? invQPtFromFCF(track, mBZField, chi2invqptquad) : invQPtFromParabola(track, mBZField, chi2invqptquad);
+    invpqtseed = invQPtFromFCF(track, mBZField, chi2invqptquad);//mftTrackingParam.seedQPt ? invQPtFromFCF(track, mBZField, chi2invqptquad) : invQPtFromParabola(track, mBZField, chi2invqptquad);
     track.setInvQPtSeed(invpqtseed);
     track.setChi2QPtQuadtratic(chi2invqptquad);
     (*itParam).setInvQPt(track.getInvQPtSeed()); // Initial momentum estimate
-    initTrack(*itParam->getClusterPtr(), *itParam);
+    initTrack(*itParam->getClusterPtr(), *itParam ,*track.first().getClusterPtr());
   }
 
   if (mftTrackingParam.verbose) {
@@ -127,7 +127,7 @@ bool TrackFitter::fit(FitterTrackMFT& track, bool smooth, bool finalize,
 }
 
 //_________________________________________________________________________________________________
-void TrackFitter::initTrack(const Cluster& cl, TrackParamMFT& param)
+void TrackFitter::initTrack(const Cluster& cl, TrackParamMFT& param, const Cluster& firstCl)
 {
 
   /// Compute the initial track parameters at the z position of the last cluster (cl)
@@ -137,22 +137,59 @@ void TrackFitter::initTrack(const Cluster& cl, TrackParamMFT& param)
 
   auto& mftTrackingParam = MFTTrackingParam::Instance();
 
-  // compute the track parameters at the last cluster
   double x0 = cl.xCoordinate;
   double y0 = cl.yCoordinate;
   double z0 = cl.zCoordinate;
+  double x1 = firstCl.xCoordinate;	
+  double y1 = firstCl.yCoordinate;	
+  double z1 = firstCl.zCoordinate;	 
+
+  double k = 0.3 * TMath::Abs(mBZField);
+  double Hz = mBZField / TMath::Abs(mBZField);
+  double dx = x0 - x1;
+  double dy = y0 - y1;
+  double dz = z0 - z1;
+  double dx2 = dx * dx;
+  double dy2 = dy * dy; 
+  double dr = TMath::Sqrt(dx2 + dy2);
+  double dr2 = dx2 + dy2;
+  double invdr = 1./dr;
+  double invdr2 = 1. / dr2;
+  double invdr3 = invdr2*invdr;
+  double HzKdr = Hz * k * dr;
+
+  double invqpt = param.getInvQPt();
+  double Qr = invqpt * dr * k;
+  double Qrsq = Qr * Qr;
+  double Qi = TMath::Sqrt(Qrsq+1);
+  double Q1 = Qi + 1;
+  double Q1sq = Q1 * Q1;
+  double sqrtQ1 = TMath::Sqrt(Q1);
+
+  double invQi = 1. / Qi; 
+  double invQisq = invQi * invQi;
+  double invQ1 = 1. / Q1; 
+  double invsqrtQ1 = 1. / sqrtQ1;
+  double invQ1sq = invQ1 * invQ1;
+  double invQ1cu = invQ1sq * invQ1;
+  double QQ = 2 * Qi * Q1 - Qrsq; 
+  double sqrt2 = TMath::Sqrt(2);
+  // compute the track parameters at the last cluster
+
+
   double pt = TMath::Sqrt(x0 * x0 + y0 * y0);
   double pz = z0;
-  double phi0 = TMath::ATan2(y0, x0);
-  double tanl = pz / pt;
-  double r0sq = x0 * x0 + y0 * y0;
-  double r0cu = r0sq * TMath::Sqrt(r0sq);
-  double invr0sq = 1.0 / r0sq;
-  double invr0cu = 1.0 / r0cu;
+  double tanl = 0.5 * TMath::Sqrt(2) * (dz / dr) * TMath::Sqrt(Qi + 1);
+  double phi0 = TMath::ATan2(dy, dx) - invqpt * Hz * dz * k * 0.5 / tanl;
+//  double r0sq = x0 * x0 + y0 * y0;
+// double r0cu = r0sq * TMath::Sqrt(r0sq);
+//  double invr0sq = 1.0 / r0sq;
+//  double invr0cu = 1.0 / r0cu;
   double sigmax0sq = cl.sigmaX2;
   double sigmay0sq = cl.sigmaY2;
   double sigmaDeltaZsq = 5.0;         // Primary vertex distribution: beam interaction diamond
   double sigmaboost = mftTrackingParam.sigmaboost; // Boost q/pt seed covariances
+  double sigmainvqpt = sigmaboost;
   double seedH_k = mftTrackingParam.seedH_k;       // SeedH constant
 
   param.setX(x0);
@@ -194,23 +231,23 @@ void TrackFitter::initTrack(const Cluster& cl, TrackParamMFT& param)
   lastParamCov.Zero();
   lastParamCov(0, 0) = sigmax0sq;                   // <X,X>
   lastParamCov(0, 1) = 0;                           // <Y,X>
-  lastParamCov(0, 2) = sigmaboost * -sigmax0sq * y0 * invr0sq;      // <PHI,X>
-  lastParamCov(0, 3) = sigmaboost * -z0 * sigmax0sq * x0 * invr0cu; // <TANL,X>
-  lastParamCov(0, 4) = sigmaboost * -x0 * sigmax0sq * invr0cu;      // <INVQPT,X>
+  lastParamCov(0, 2) = -sigmax0sq * 0.25 * invQi * invdr2 * invQ1sq * ( Hz * dx * Qr * sqrt2 * Q1 * (2 * Qi * sqrtQ1 * Q1sq - Qrsq) + 4 * Qi * dy * Q1sq);	// <PHI,X>
+  lastParamCov(0, 3) = sigmax0sq * sqrt2 * dz * 0.25 * invQi * invdr3 * invsqrtQ1 * dx * (-2 * Qi *  Q1 + Qrsq); 	// <TANL,X>estudar
+  lastParamCov(0, 4) = 0;    	// <INVQPT,X>
 
-  lastParamCov(1, 1) = sigmay0sq;                                   // <Y,Y>
-  lastParamCov(1, 2) = sigmaboost * sigmay0sq * x0 * invr0sq;       // <PHI,Y>
-  lastParamCov(1, 3) = sigmaboost * -z0 * sigmay0sq * y0 * invr0cu; // <TANL,Y>
-  lastParamCov(1, 4) = sigmaboost * y0 * sigmay0sq * invr0cu;       //1e-2; // <INVQPT,Y>
+  lastParamCov(1, 1) = sigmay0sq;	// <Y,Y>
+  lastParamCov(1, 2) = -sigmay0sq * 0.25 * invQi * invdr2 * invQ1sq * ( Hz * dy * Qr * sqrt2 * Q1 * (2 * Qi * sqrtQ1 * Q1sq - Qrsq) + 4 * Qi * dx * Q1sq);;       // <PHI,Y>
+  lastParamCov(1, 3) = sigmay0sq * sqrt2 * dz * 0.25 * invQi * invdr3 * invsqrtQ1 * dy * (-2 * Qi * Q1 + Qrsq); 	// <TANL,Y>
+  lastParamCov(1, 4) = 0;       // <INVQPT,Y>
 
-  lastParamCov(2, 2) = sigmaboost * (sigmax0sq * y0 * y0 + sigmay0sq * x0 * x0) * invr0sq * invr0sq; // <PHI,PHI>
-  lastParamCov(2, 3) = sigmaboost * z0 * x0 * y0 * (sigmax0sq - sigmay0sq) * invr0sq * invr0cu;      //  <TANL,PHI>
-  lastParamCov(2, 4) = sigmaboost * y0 * x0 * invr0cu * invr0sq * (sigmax0sq - sigmay0sq);           //  <INVQPT,PHI>
+  lastParamCov(2, 2) = sigmainvqpt * HzKdr * aux * 0.125 * invQisq * invQ1cu * QQ * QQ; // <PHI,PHI>
+  lastParamCov(2, 3) = sigmainvqpt * -HzKdr * Qr * dz * k * 0.125 * invQisq * invQ1sq * QQ;      //  <TANL,PHI>
+  lastParamCov(2, 4) = sigmainvqpt * -HzKdr * sqrt2 * 0.25 * invQi * invsqrtQ1 * invQ1cu * QQ;           //  <INVQPT,PHI>
 
-  lastParamCov(3, 3) = sigmaboost * z0 * z0 * (sigmax0sq * x0 * x0 + sigmay0sq * y0 * y0) * invr0cu * invr0cu + sigmaDeltaZsq * invr0sq; // <TANL,TANL>
-  lastParamCov(3, 4) = sigmaboost * z0 * invr0cu * invr0cu * (sigmax0sq * x0 * x0 + sigmay0sq * y0 * y0);                                // <INVQPT,TANL>
+  lastParamCov(3, 3) = sigmainvqpt * Qr * Qr * dz * dz * k * k * 0.125 * invQisq * invQ1;; // <TANL,TANL>
+  lastParamCov(3, 4) = sigmainvqpt * Qr * sqrt2 * dz * k * 0.125 * invQi * invsqrtQ1;                                // <INVQPT,TANL>
 
-  lastParamCov(4, 4) = sigmaboost * sigmaboost * (sigmax0sq * x0 * x0 + sigmay0sq * y0 * y0) * invr0cu * invr0cu; // <INVQPT,INVQPT>
+  lastParamCov(4, 4) = sigmainvqpt; // <INVQPT,INVQPT>
 
   lastParamCov(1, 0) = lastParamCov(0, 1); //
   lastParamCov(2, 0) = lastParamCov(0, 2); //
