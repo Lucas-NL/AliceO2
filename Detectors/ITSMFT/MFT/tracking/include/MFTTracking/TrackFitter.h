@@ -65,8 +65,8 @@ class TrackFitter
 };
 
 // Functions to estimate momentum and charge from track curvature
-Double_t invQPtFromFCF(const TrackLTF& track, Double_t bFieldZ, Double_t& chi2);
-Bool_t LinearRegression(Int_t nVal, Double_t* xVal, Double_t* yVal, Double_t* yErr, Double_t& a, Double_t& ae, Double_t& b, Double_t& be);
+Double_t invQPtFromFCF(const TrackLTF& track, Double_t bFieldZ, Double_t& sigmainvqptsq)
+Bool_t LinearRegression(Int_t nVal, Double_t* xVal, Double_t* yVal, Double_t* yErr, Double_t& B, Double_t& Berr, Double_t& A, Double_t& Aerr);
 
 } // namespace mft
 } // namespace o2
